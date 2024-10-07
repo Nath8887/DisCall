@@ -23,7 +23,7 @@
         
         .section {
             display: none;
-            width: 90vw;
+            width: 100%;
             max-width: 400px;
             margin-top: 20px;
         }
@@ -95,7 +95,7 @@
             align-items: center;
         }
         
-        #total, #changeDue {
+        #total, #changeDue, #tillTotal {
             font-size: 24px;
             margin: 20px 0;
             background-color: white;
@@ -181,7 +181,7 @@
             font-weight: bold;
         }
 
-        #manualTillAmount {
+        #tillAmountToggle, #manualTillAmount {
             width: 100%;
             padding: 15px;
             font-size: 18px;
@@ -197,7 +197,7 @@
     <div id="homeSection" class="section" style="display: flex;">
         <h1>DysCal</h1>
         <p>Finding Solutions</p>
-        <button id="startButton" class="control-button" aria-label="Start Button" onclick="showSection('moneyCounterSection')">Start</button>
+        <button id="startButton" class="control-button" onclick="showSection('moneyCounterSection')">Start</button>
     </div>
 
     <div id="moneyCounterSection" class="section">
@@ -205,30 +205,43 @@
         <div class="money-grid" id="moneyGrid"></div>
         <div id="total">Total: £0.00</div>
         <div class="control-buttons">
-            <button class="control-button" aria-label="Undo" onclick="undo()">Undo</button>
-            <button class="control-button" aria-label="Redo" onclick="redo()">Redo</button>
-            <button class="control-button" aria-label="Continue to Change" onclick="continueToChange()">Continue to Change</button>
+            <button class="control-button" onclick="undo()">Undo</button>
+            <button class="control-button" onclick="redo()">Redo</button>
+            <button class="control-button" onclick="continueToChange()">Continue to Change</button>
         </div>
-        <button class="control-button" aria-label="Back to Home" onclick="showSection('homeSection')">Back to Home</button>
+        <button class="control-button" onclick="showSection('homeSection')">Back to Home</button>
     </div>
 
     <div id="changeCalculatorSection" class="section">
         <h2>Change Calculator</h2>
-        <input type="number" id="manualTillAmount" placeholder="Enter till amount">
+        <select id="tillAmountToggle" onchange="toggleTillAmountInput()">
+            <option value="manual">Enter Till Amount Manually</option>
+            <option value="visual">Use Visual Till Amount Input</option>
+        </select>
+        <div id="manualTillInput" style="display: block;">
+            <input type="number" id="manualTillAmount" placeholder="Enter till amount">
+        </div>
+        <div id="visualTillInput" style="display: none;">
+            <h3>Amount shown on till:</h3>
+            <div class="money-grid" id="tillMoneyGrid"></div>
+        </div>
+        <div id="tillTotal">Till Total: £0.00</div>
         <input type="number" id="customerMoney" placeholder="Money handed by customer">
-        <button class="control-button" aria-label="Calculate Change" onclick="calculateChange()">Calculate Change</button>
+        <button class="control-button" onclick="calculateChange()">Calculate Change</button>
         <div id="changeDue"></div>
         <div id="changeBreakdown">
             <h3>Change to Give:</h3>
             <div class="change-grid" id="changeGrid"></div>
         </div>
         <div class="control-buttons">
-            <button class="control-button" aria-label="Back to Home" onclick="showSection('homeSection')">Back to Home</button>
+            <button class="control-button" onclick="resetTillAmount()">Reset Till Amount</button>
+            <button class="control-button" onclick="showSection('homeSection')">Back to Home</button>
         </div>
     </div>
 
     <script>
         let currentTotal = 0;
+        let tillTotal = 0;
         let moneyStack = [];
         let redoStack = [];
         const moneyTypes = [
@@ -238,97 +251,162 @@
     {value: 0.10, label: "10p", image: "https://nath8887.github.io/dyscal/10p.png"},
     {value: 0.20, label: "20p", image: "https://nath8887.github.io/dyscal/20p.png"},
     {value: 0.50, label: "50p", image: "https://nath8887.github.io/dyscal/50p.png"},
-    {value: 1.00, label: "£1", image: "https://nath8887.github.io/dyscal/1pound.png"},
-    {value: 2.00, label: "£2", image: "https://nath8887.github.io/dyscal/2pound.png"}
-];
+    {value: 1, label: "£1", image: "https://nath8887.github.io/dyscal/1pound.png"},
+    {value: 2, label: "£2", image: "https://nath8887.github.io/dyscal/2pound.png"},
+    {value: 5, label: "£5", image: "https://nath8887.github.io/dyscal/5pound.png"},
+    {value: 10, label: "£10", image: "https://nath8887.github.io/dyscal/10pound.png"},
+    {value: 20, label: "£20", image: "https://nath8887.github.io/dyscal/20pound.png"}
+
+        ];
 
         function showSection(sectionId) {
             document.querySelectorAll('.section').forEach(section => {
                 section.style.display = 'none';
             });
-            document.getElementById(sectionId).style.display = 'block';
+            document.getElementById(sectionId).style.display = sectionId === 'homeSection' ? 'flex' : 'block';
         }
 
-        function createMoneyButtons() {
-            const grid = document.getElementById('moneyGrid');
+        function createMoneyButtons(gridId, onClickFunction) {
+            const grid = document.getElementById(gridId);
             moneyTypes.forEach(type => {
                 const button = document.createElement('button');
                 button.className = 'money-button';
-                button.onclick = () => addToTotal(type.value, button);
+                button.onclick = () => onClickFunction(type.value);
+                
                 const img = document.createElement('img');
-                img.src = type.image;
+                img.src = `images/${type.image}`;
+                img.alt = type.label;
                 button.appendChild(img);
+                
                 grid.appendChild(button);
             });
         }
 
-        function addToTotal(amount, button) {
-            currentTotal = Math.round((currentTotal + amount) * 100) / 100;
-            moneyStack.push(amount);
-            button.vibrate ? navigator.vibrate(50) : null;
-            updateDisplay();
+        function addMoney(value, count = 1) {
+            for (let i = 0; i < count; i++) {
+                currentTotal += value;
+                moneyStack.push(value);
+            }
+            updateTotal();
+            if ('vibrate' in navigator) {
+                navigator.vibrate(50); // Vibrate for 50ms
+            }
+        }
+
+        function addTillMoney(value) {
+            tillTotal += value;
+            updateTillTotal();
+            if ('vibrate' in navigator) {
+                navigator.vibrate(50); // Vibrate for 50ms
+            }
+        }
+
+        function updateTotal() {
+            document.getElementById('total').textContent = `Total: £${currentTotal.toFixed(2)}`;
+        }
+
+        function updateTillTotal() {
+            document.getElementById('tillTotal').textContent = `Till Total: £${tillTotal.toFixed(2)}`;
         }
 
         function undo() {
-            if (moneyStack.length === 0) return;
-            const lastAmount = moneyStack.pop();
-            redoStack.push(lastAmount);
-            currentTotal = Math.round((currentTotal - lastAmount) * 100) / 100;
-            updateDisplay();
+            if (moneyStack.length > 0) {
+                const lastValue = moneyStack.pop();
+                redoStack.push(lastValue);
+                currentTotal -= lastValue;
+                updateTotal();
+            }
         }
 
         function redo() {
-            if (redoStack.length === 0) return;
-            const lastRedo = redoStack.pop();
-            moneyStack.push(lastRedo);
-            currentTotal = Math.round((currentTotal + lastRedo) * 100) / 100;
-            updateDisplay();
-        }
-
-        function updateDisplay() {
-            document.getElementById('total').textContent = `Total: £${currentTotal.toFixed(2)}`;
+            if (redoStack.length > 0) {
+                const value = redoStack.pop();
+                addMoney(value);
+            }
         }
 
         function continueToChange() {
             showSection('changeCalculatorSection');
+            document.getElementById('customerMoney').value = currentTotal.toFixed(2);
         }
 
-        function calculateChange() {
-            const customerAmount = Math.round(parseFloat(document.getElementById('customerMoney').value) * 100);
-            const tillAmount = Math.round(parseFloat(document.getElementById('manualTillAmount').value) * 100);
-            let change = customerAmount - tillAmount;
-            document.getElementById('changeDue').textContent = `Change Due: £${(change / 100).toFixed(2)}`;
-            displayChangeBreakdown(change);
+        function resetTillAmount() {
+            tillTotal = 0;
+            updateTillTotal();
+            document.getElementById('manualTillAmount').value = '';
         }
 
-        function displayChangeBreakdown(amount) {
-            const grid = document.getElementById('changeGrid');
-            grid.innerHTML = '';
-            const breakdown = {};
-            moneyTypes.forEach(type => {
-                const valueInCents = Math.round(type.value * 100);
-                const count = Math.floor(amount / valueInCents);
-                if (count > 0) {
-                    breakdown[type.label] = count;
-                    amount -= valueInCents * count;
-                }
-            });
-            for (const [label, count] of Object.entries(breakdown)) {
-                const div = document.createElement('div');
-                div.className = 'change-item';
-                const img = document.createElement('img');
-                img.src = moneyTypes.find(type => type.label === label).image;
-                img.className = 'change-image';
-                const span = document.createElement('span');
-                span.className = 'change-count';
-                span.textContent = `${count}x`;
-                div.appendChild(img);
-                div.appendChild(span);
-                grid.appendChild(div);
+        function toggleTillAmountInput() {
+            const toggle = document.getElementById('tillAmountToggle');
+            const manualInput = document.getElementById('manualTillInput');
+            const visualInput = document.getElementById('visualTillInput');
+            
+            if (toggle.value === 'manual') {
+                manualInput.style.display = 'block';
+                visualInput.style.display = 'none';
+            } else {
+                manualInput.style.display = 'none';
+                visualInput.style.display = 'block';
             }
         }
 
-        createMoneyButtons();
+        function calculateChange() {
+            const customerMoney = parseFloat(document.getElementById('customerMoney').value);
+            
+            if (document.getElementById('tillAmountToggle').value === 'manual') {
+                tillTotal = parseFloat(document.getElementById('manualTillAmount').value) || 0;
+            }
+            
+            if (isNaN(tillTotal) || isNaN(customerMoney)) {
+                alert('Please enter valid numbers for both fields.');
+                return;
+            }
+            
+            const changeDue = customerMoney - tillTotal;
+            if (changeDue < 0) {
+                alert('The customer has not provided enough money.');
+                return;
+            }
+            
+            document.getElementById('changeDue').textContent = `Change Due: £${changeDue.toFixed(2)}`;
+            
+            const changeBreakdown = calculateChangeBreakdown(changeDue);
+            displayChangeBreakdown(changeBreakdown);
+        }
+
+        function calculateChangeBreakdown(amount) {
+            const breakdown = {};
+            let remaining = amount;
+            
+            moneyTypes.sort((a, b) => b.value - a.value).forEach(type => {
+                const count = Math.floor(remaining / type.value);
+                if (count > 0) {
+                    breakdown[type.label] = count;
+                    remaining = (remaining - (type.value * count)).toFixed(2);
+                }
+            });
+            
+            return breakdown;
+        }
+
+        function displayChangeBreakdown(breakdown) {
+            const changeGrid = document.getElementById('changeGrid');
+            changeGrid.innerHTML = '';
+            for (const [label, count] of Object.entries(breakdown)) {
+                const type = moneyTypes.find(t => t.label === label);
+                const changeItem = document.createElement('div');
+                changeItem.className = 'change-item';
+                changeItem.innerHTML = `
+                    <img src="images/${type.image}" alt="${label}" class="change-image">
+                    <span class="change-count">x ${count}</span>
+                `;
+                changeGrid.appendChild(changeItem);
+            }
+        }
+
+        // Initialize the app
+        createMoneyButtons('moneyGrid', addMoney);
+        createMoneyButtons('tillMoneyGrid', addTillMoney);
     </script>
 </body>
 </html>
